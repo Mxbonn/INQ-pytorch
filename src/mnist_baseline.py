@@ -48,16 +48,16 @@ def load_checkpoint(filename):
 
 
 def main():
-    train_flag = False
-    test_flag = True
+    train_flag = True
+    test_flag = False
     epochs = 10
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device: {}".format(device))
 
     train_loader, test_loader = src.data.mnist.get_data_loaders()
-    model = src.models.MnistNet().to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-3)
+    model = src.models.LinearMnistNet().to(device)
+    optimizer = src.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-3)
 
     if train_flag:
         for epoch in range(1, epochs + 1):
@@ -67,10 +67,10 @@ def main():
         save_checkpoint({
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
-        }, filename="./models/mnist.pth.tar")
+        }, filename="./models/linearmnist.pth.tar")
 
     if test_flag:
-        checkpoint = load_checkpoint("./models/mnist.pth.tar")
+        checkpoint = load_checkpoint("./models/linearmnist.pth.tar")
         model.load_state_dict(checkpoint['state_dict'])
         model.to(device)
         test(model, device, test_loader)
