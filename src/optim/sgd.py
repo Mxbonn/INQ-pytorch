@@ -85,7 +85,7 @@ class SGD(Optimizer):
             dampening = group['dampening']
             nesterov = group['nesterov']
 
-            for p in group['params']:
+            for idx, p in enumerate(group['params']):
                 if p.grad is None:
                     continue
                 d_p = p.grad.data
@@ -104,13 +104,7 @@ class SGD(Optimizer):
                     else:
                         d_p = buf
 
-                T = torch.zeros_like(d_p)
-                T_size = T.size()
-                T_flattened = torch.reshape(T, (-1,))
-                T_flattened_size = T_flattened.shape[0]
-                T_flattened[:T_flattened_size//2] = 1
-                T = torch.reshape(T_flattened, T_size)
-                d_p.mul_(T)
+                d_p.mul_(group['Ts'][idx])
                 p.data.add_(-group['lr'], d_p)
 
         return loss

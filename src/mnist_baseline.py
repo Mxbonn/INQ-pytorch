@@ -48,8 +48,9 @@ def load_checkpoint(filename):
 
 
 def main():
-    train_flag = True
+    train_flag = False
     test_flag = False
+    debug_flag = True
     epochs = 10
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -57,7 +58,9 @@ def main():
 
     train_loader, test_loader = src.data.mnist.get_data_loaders()
     model = src.models.LinearMnistNet().to(device)
+    #optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-3)
     optimizer = src.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-3)
+    scheduler = src.optim.INQScheduler(optimizer)
 
     if train_flag:
         for epoch in range(1, epochs + 1):
@@ -73,6 +76,20 @@ def main():
         checkpoint = load_checkpoint("./models/linearmnist.pth.tar")
         model.load_state_dict(checkpoint['state_dict'])
         model.to(device)
+        test(model, device, test_loader)
+
+    if debug_flag:
+        checkpoint = load_checkpoint("./models/linearmnist.pth.tar")
+        model.load_state_dict(checkpoint['state_dict'])
+        model.to(device)
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                print(name, param.data)
+        test(model, device, test_loader)
+        train(model, device, train_loader, optimizer)
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                print(name, param.data)
         test(model, device, test_loader)
 
 

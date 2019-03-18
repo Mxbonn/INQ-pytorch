@@ -13,7 +13,11 @@ class INQScheduler(object):
         for group in optimizer.param_groups:
             group['Ts'] = []
             for p in group['params']:
-                T = torch.zeros_like(p.grad.data)
+                if p.requires_grad is False:
+                    group['Ts'].append(0)
+                    continue
+
+                T = torch.zeros_like(p.data)
                 T_size = T.size()
                 T_flattened = torch.reshape(T, (-1,))
                 T_flattened_size = T_flattened.shape[0]
