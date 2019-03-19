@@ -63,6 +63,16 @@ class SGD(Optimizer):
             raise ValueError("Nesterov momentum requires a momentum and zero dampening")
         super(SGD, self).__init__(params, defaults)
 
+        for group in self.param_groups:
+            group['Ts'] = []
+            for p in group['params']:
+                if p.requires_grad is False:
+                    group['Ts'].append(0)
+                    continue
+
+                T = torch.ones_like(p.data)
+                group['Ts'].append(T)
+
     def __setstate__(self, state):
         super(SGD, self).__setstate__(state)
         for group in self.param_groups:

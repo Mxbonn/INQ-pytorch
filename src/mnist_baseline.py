@@ -60,7 +60,7 @@ def main():
     model = src.models.LinearMnistNet().to(device)
     #optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-3)
     optimizer = src.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-3)
-    scheduler = src.optim.INQScheduler(optimizer)
+    scheduler = src.optim.INQScheduler(optimizer, iterative_steps=[0.5, 1])
 
     if train_flag:
         for epoch in range(1, epochs + 1):
@@ -84,12 +84,15 @@ def main():
         model.to(device)
         for name, param in model.named_parameters():
             if param.requires_grad:
-                print(name, param.data)
+                #print(name, param.data)
+                pass
         test(model, device, test_loader)
         train(model, device, train_loader, optimizer)
+        scheduler.step()
         for name, param in model.named_parameters():
             if param.requires_grad:
-                print(name, param.data)
+                #print(name, param.data)
+                pass
         test(model, device, test_loader)
 
 

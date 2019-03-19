@@ -3,28 +3,16 @@ from torch.optim.optimizer import Optimizer
 
 
 class INQScheduler(object):
-    def __init__(self, optimizer):
+    def __init__(self, optimizer, iterative_steps):
         if not isinstance(optimizer, Optimizer):
             raise TypeError("{} is not an Optimizer".format(
                 type(optimizer).__name__))
+        if not iterative_steps[-1] == 1:
+            raise ValueError("Last step should equal 1 in INQ.")
         self.optimizer = optimizer
-
-        #
-        for group in optimizer.param_groups:
-            group['Ts'] = []
-            for p in group['params']:
-                if p.requires_grad is False:
-                    group['Ts'].append(0)
-                    continue
-
-                T = torch.zeros_like(p.data)
-                T_size = T.size()
-                T_flattened = torch.reshape(T, (-1,))
-                T_flattened_size = T_flattened.shape[0]
-                T_flattened[:T_flattened_size // 2] = 1
-                T = torch.reshape(T_flattened, T_size)
-                group['Ts'].append(T)
-
+        self.iterative_steps = iterative_steps
+        self.idx = 0
+        self.step()
 
     def state_dict(self):
         """Returns the state of the scheduler as a :class:`dict`.
@@ -47,4 +35,22 @@ class INQScheduler(object):
 
     def step(self):
         # update T matrix
-        raise NotImplemented
+        for group in self.optimizer.param_groups:
+            for idx, p in enumerate(group['params']):
+                if p.requires_grad is False:
+                    continue
+
+                if self.idx == 0:
+                    probability = self.iterative_steps[0]
+                elif self.idx >= len(self.iterative_steps) - 1:
+                    probability = 1
+                else:
+                    probability = (self.iterative_steps[self.idx] - self.iterative_steps[self.idx - 1]) / (1 - self.iterative_steps[self.idx - 1])
+
+                T = group['Ts'][idx]
+                T_rand = torch.rand_like(p.data)
+                zeros = torch.zeros_like(p.data)
+                T = torch.where(T_rand <= probability, zeros, T)
+                group['Ts'][idx] = T
+
+        self.idx += 1
