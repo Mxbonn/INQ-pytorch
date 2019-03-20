@@ -88,7 +88,6 @@ def main():
         test(model, device, test_loader)
         train(model, device, train_loader, optimizer)
         scheduler.step()
-        scheduler.quantize()
         for name, param in model.named_parameters():
             if param.requires_grad:
                 print(name, param.data)

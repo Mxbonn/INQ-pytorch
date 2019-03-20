@@ -90,3 +90,4 @@ class INQScheduler(object):
                 group['Ts'][idx] = T
 
         self.idx += 1
+        self.quantize()
