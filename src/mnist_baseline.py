@@ -58,9 +58,7 @@ def main():
 
     train_loader, test_loader = src.data.mnist.get_data_loaders()
     model = src.models.LinearMnistNet().to(device)
-    #optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-3)
-    optimizer = src.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-3)
-    scheduler = src.optim.INQScheduler(optimizer, iterative_steps=[0.5, 1])
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-3)
 
     if train_flag:
         for epoch in range(1, epochs + 1):
@@ -82,17 +80,19 @@ def main():
         checkpoint = load_checkpoint("./models/linearmnist.pth.tar")
         model.load_state_dict(checkpoint['state_dict'])
         model.to(device)
+        optimizer = src.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-3)
+        scheduler = src.optim.INQScheduler(optimizer, iterative_steps=[0.5, 1])
         for name, param in model.named_parameters():
             if param.requires_grad:
-                #print(name, param.data)
-                pass
+                print(name, param.data)
         test(model, device, test_loader)
         train(model, device, train_loader, optimizer)
         scheduler.step()
+        scheduler.quantize()
         for name, param in model.named_parameters():
             if param.requires_grad:
-                #print(name, param.data)
-                pass
+                print(name, param.data)
+                print(param.data.unique().size())
         test(model, device, test_loader)
 
 
