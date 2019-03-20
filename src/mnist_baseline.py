@@ -57,8 +57,8 @@ def main():
     print("Using device: {}".format(device))
 
     train_loader, test_loader = src.data.mnist.get_data_loaders()
-    model = src.models.LinearMnistNet().to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-3)
+    model = src.models.MnistNet().to(device)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-3)
 
     if train_flag:
         for epoch in range(1, epochs + 1):
@@ -68,19 +68,19 @@ def main():
         save_checkpoint({
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
-        }, filename="./models/linearmnist.pth.tar")
+        }, filename="./models/mnist.pth.tar")
 
     if test_flag:
-        checkpoint = load_checkpoint("./models/linearmnist.pth.tar")
+        checkpoint = load_checkpoint("./models/mnist.pth.tar")
         model.load_state_dict(checkpoint['state_dict'])
         model.to(device)
         test(model, device, test_loader)
 
     if debug_flag:
-        checkpoint = load_checkpoint("./models/linearmnist.pth.tar")
+        checkpoint = load_checkpoint("./models/mnist.pth.tar")
         model.load_state_dict(checkpoint['state_dict'])
         model.to(device)
-        optimizer = src.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-3)
+        optimizer = src.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-3)
         scheduler = src.optim.INQScheduler(optimizer, iterative_steps=[0.5, 1])
         for name, param in model.named_parameters():
             if param.requires_grad:

@@ -1,11 +1,12 @@
 import math
+from functools import partial
+
 import torch
 from torch.optim.optimizer import Optimizer
-from functools import partial
 
 
 class INQScheduler(object):
-    def __init__(self, optimizer, iterative_steps, weight_bits=5):
+    def __init__(self, optimizer, iterative_steps, weight_bits=3):
         if not isinstance(optimizer, Optimizer):
             raise TypeError("{} is not an Optimizer".format(
                 type(optimizer).__name__))
