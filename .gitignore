@@ -1,7 +1,8 @@
 # project specific
 #
-/data
-/models
+data/
+models/
+tensorboard/
 
 # General python ignore
 # Byte-compiled / optimized / DLL files

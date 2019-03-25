@@ -6,7 +6,7 @@ from torch.optim.optimizer import Optimizer
 
 
 class INQScheduler(object):
-    def __init__(self, optimizer, iterative_steps, weight_bits=3):
+    def __init__(self, optimizer, iterative_steps):
         if not isinstance(optimizer, Optimizer):
             raise TypeError("{} is not an Optimizer".format(
                 type(optimizer).__name__))
@@ -15,7 +15,6 @@ class INQScheduler(object):
         self.optimizer = optimizer
         self.iterative_steps = iterative_steps
         self.idx = 0
-        self.step()
 
         for group in self.optimizer.param_groups:
             group['ns'] = []
@@ -25,8 +24,10 @@ class INQScheduler(object):
                     continue
                 s = torch.max(torch.abs(p.data)).item()
                 n_1 = math.floor(math.log((4*s)/3, 2))
-                n_2 = int(n_1 + 1 - (2**(weight_bits-1))/2)
+                n_2 = int(n_1 + 1 - (2**(group['weight_bits']-1))/2)
                 group['ns'].append((n_1, n_2))
+
+        self.step()
 
     def state_dict(self):
         """Returns the state of the scheduler as a :class:`dict`.
@@ -49,8 +50,8 @@ class INQScheduler(object):
             for idx, p in enumerate(group['params']):
                 if p.requires_grad is False:
                     continue
-                ns = group['ns'][idx]
                 T = group['Ts'][idx]
+                ns = group['ns'][idx]
                 device = p.data.device
                 quantizer = partial(self.quantize_weight, n_1=ns[0], n_2=ns[1])
                 fully_quantized = p.data.clone().cpu().apply_(quantizer).to(device)
@@ -91,3 +92,11 @@ class INQScheduler(object):
 
         self.idx += 1
         self.quantize()
+
+
+def reset_lr_scheduler(scheduler):
+    scheduler.base_lrs = list(map(lambda group: group['initial_lr'], scheduler.optimizer.param_groups))
+    last_epoch = -1
+    scheduler.step(last_epoch + 1)
+    scheduler.last_epoch = last_epoch
+

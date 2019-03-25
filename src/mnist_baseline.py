@@ -80,7 +80,7 @@ def main():
         checkpoint = load_checkpoint("./models/mnist.pth.tar")
         model.load_state_dict(checkpoint['state_dict'])
         model.to(device)
-        optimizer = src.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-3)
+        optimizer = src.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-3, weight_bits=5)
         scheduler = src.optim.INQScheduler(optimizer, iterative_steps=[0.5, 1])
         for name, param in model.named_parameters():
             if param.requires_grad:
