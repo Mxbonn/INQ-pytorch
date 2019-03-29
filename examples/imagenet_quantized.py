@@ -1,4 +1,4 @@
-import argparse
+from types import SimpleNamespace
 import os
 import random
 import shutil
@@ -6,6 +6,7 @@ import time
 import warnings
 import sys
 
+import inq
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -19,67 +20,48 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 
+from tensorboardX import SummaryWriter
+
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
 
-parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('data', metavar='DIR',
-                    help='path to dataset')
-parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
-                    choices=model_names,
-                    help='model architecture: ' +
-                        ' | '.join(model_names) +
-                        ' (default: resnet18)')
-parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
-                    help='number of data loading workers (default: 4)')
-parser.add_argument('--epochs', default=90, type=int, metavar='N',
-                    help='number of total epochs to run')
-parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
-                    help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=256, type=int,
-                    metavar='N',
-                    help='mini-batch size (default: 256), this is the total '
-                         'batch size of all GPUs on the current node when '
-                         'using Data Parallel or Distributed Data Parallel')
-parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
-                    metavar='LR', help='initial learning rate', dest='lr')
-parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
-                    help='momentum')
-parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
-                    metavar='W', help='weight decay (default: 1e-4)',
-                    dest='weight_decay')
-parser.add_argument('-p', '--print-freq', default=10, type=int,
-                    metavar='N', help='print frequency (default: 10)')
-parser.add_argument('--resume', default='', type=str, metavar='PATH',
-                    help='path to latest checkpoint (default: none)')
-parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
-                    help='evaluate model on validation set')
-parser.add_argument('--pretrained', dest='pretrained', action='store_true',
-                    help='use pre-trained model')
-parser.add_argument('--world-size', default=-1, type=int,
-                    help='number of nodes for distributed training')
-parser.add_argument('--rank', default=-1, type=int,
-                    help='node rank for distributed training')
-parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', type=str,
-                    help='url used to set up distributed training')
-parser.add_argument('--dist-backend', default='nccl', type=str,
-                    help='distributed backend')
-parser.add_argument('--seed', default=None, type=int,
-                    help='seed for initializing training. ')
-parser.add_argument('--gpu', default=None, type=int,
-                    help='GPU id to use.')
-parser.add_argument('--multiprocessing-distributed', action='store_true',
-                    help='Use multi-processing distributed training to launch '
-                         'N processes per node, which has N GPUs. This is the '
-                         'fastest way to use PyTorch for either single node or '
-                         'multi node data parallel training')
+settings_dict = {
+    'data': '/home/mbonnaer/Datasets/imagenet',
+    'arch': 'resnet18',
+    'workers': 8,
+    'epochs': 4,
+    'start_epoch': 0,
+    'batch_size': 256,
+    'lr': 0.001,
+    'momentum': 0.9,
+    'weight_decay': 0.0005,
+    'print_freq': 10,
+    'resume': '',
+    'evaluate': False,
+    'pretrained': True,
+    'world_size': -1,
+    'rank': -1,
+    'dist_url': '',
+    'dist_backend': '',
+    'seed': None,
+    'gpu': None,
+    'multiprocessing_distributed': False,
+
+    'quantize': True,
+    'weight_bits': 5,
+    'iterative_steps': [0.5, 0.75, 0.875, 1],
+    'log_dir': "./tensorboard/resnet18_inq_pruning"
+}
 
 best_acc1 = 0
+n_iter = 0
+
+writer = SummaryWriter(settings_dict['log_dir'])
 
 
 def main():
-    args = parser.parse_args()
+    args = SimpleNamespace(**settings_dict)
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -192,6 +174,15 @@ def main_worker(gpu, ngpus_per_node, args):
 
     cudnn.benchmark = True
 
+    if args.quantize:
+        optimizer = inq.SGD(model.parameters(), args.lr,
+                            momentum=args.momentum,
+                            weight_decay=args.weight_decay,
+                            weight_bits=args.weight_bits
+                            )
+
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2])
+
     # Data loading code
     traindir = os.path.join(args.data, 'train')
     valdir = os.path.join(args.data, 'val')
@@ -230,33 +221,42 @@ def main_worker(gpu, ngpus_per_node, args):
         validate(val_loader, model, criterion, args)
         return
 
-    for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
-        adjust_learning_rate(optimizer, epoch, args)
+    if args.quantize:
+        quantization_epochs = len(args.iterative_steps) - 1
+        quantization_scheduler = inq.INQScheduler(optimizer, args.iterative_steps, strategy="pruning")
+    else:
+        quantization_epochs = 1
 
-        # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch, args)
+    validate(val_loader, model, criterion, args)
+    if args.quantize:
+        quantization_scheduler.step()
+    for campaign in range(quantization_epochs):
+        inq.reset_lr_scheduler(scheduler)
+        for epoch in range(args.start_epoch, args.epochs):
+            scheduler.step()
+            if args.distributed:
+                train_sampler.set_epoch(epoch)
 
-        # evaluate on validation set
-        acc1 = validate(val_loader, model, criterion, args)
+            # train for one epoch
+            train(train_loader, model, criterion, optimizer, epoch, args)
 
-        # remember best acc@1 and save checkpoint
-        is_best = acc1 > best_acc1
-        best_acc1 = max(acc1, best_acc1)
+            # evaluate on validation set
+            acc1 = validate(val_loader, model, criterion, args)
 
-        if not args.multiprocessing_distributed or (args.multiprocessing_distributed
-                and args.rank % ngpus_per_node == 0):
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'arch': args.arch,
-                'state_dict': model.state_dict(),
-                'best_acc1': best_acc1,
-                'optimizer' : optimizer.state_dict(),
-            }, is_best)
+            # remember best acc@1 and save checkpoint
+            is_best = acc1 > best_acc1
+            best_acc1 = max(acc1, best_acc1)
+        if args.quantize:
+            quantization_scheduler.step()
+
+        save_checkpoint({
+            'state_dict': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+        }, False, filename='./models/quantized_{}_pruning.pth.tar'.format(args.arch))
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
+    global n_iter
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -303,9 +303,14 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
                   'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
                    epoch, i, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
+            writer.add_scalar('Train/Loss', losses.val, n_iter)
+            writer.add_scalar('Train/Prec@1', top1.val, n_iter)
+            writer.add_scalar('Train/Prec@5', top5.val, n_iter)
+            n_iter += args.print_freq
 
 
 def validate(val_loader, model, criterion, args):
+    global n_iter
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
@@ -347,6 +352,9 @@ def validate(val_loader, model, criterion, args):
         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
               .format(top1=top1, top5=top5))
 
+    writer.add_scalar('Test/Loss', losses.avg, n_iter)
+    writer.add_scalar('Test/Prec@1', top1.avg, n_iter)
+    writer.add_scalar('Test/Prec@5', top5.avg, n_iter)
     return top1.avg
 
 
@@ -372,13 +380,6 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
-
-
-def adjust_learning_rate(optimizer, epoch, args):
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    lr = args.lr * (0.1 ** (epoch // 30))
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
 
 
 def accuracy(output, target, topk=(1,)):

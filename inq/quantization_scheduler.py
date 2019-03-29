@@ -1,19 +1,42 @@
 import math
 from functools import partial
 
+import numpy as np
 import torch
 from torch.optim.optimizer import Optimizer
 
 
 class INQScheduler(object):
-    def __init__(self, optimizer, iterative_steps):
+    """Handles the the weight partitioning and group-wise quantization stages
+    of the incremental network quantization procedure.
+
+    Args:
+        optimizer (Optimizer): Wrapped optimizer (use inq.SGD).
+        iterative_steps (list): accumulated portions of quantized weights.
+        strategy ("random"|"pruning"): weight partition strategy, either random or pruning-inspired.
+
+    Example:
+        >>> optimizer = inq.SGD(...)
+        >>> inq_scheduler = INQScheduler(optimizer, [0.5, 0.75, 0.82, 1.0], strategy="pruning")
+        >>> for inq_step in range(3):
+        >>>     inq_scheduler.step()
+        >>>     for epoch in range(5):
+        >>>         train(...)
+        >>> inq_scheduler.step()
+        >>> validate(...)
+
+    """
+    def __init__(self, optimizer, iterative_steps, strategy="pruning"):
         if not isinstance(optimizer, Optimizer):
             raise TypeError("{} is not an Optimizer".format(
                 type(optimizer).__name__))
         if not iterative_steps[-1] == 1:
             raise ValueError("Last step should equal 1 in INQ.")
+        if strategy not in ["random", "pruning"]:
+            raise ValueError("INQ supports \"random\" and \"pruning\" -inspired weight partitioning")
         self.optimizer = optimizer
         self.iterative_steps = iterative_steps
+        self.strategy = strategy
         self.idx = 0
 
         for group in self.optimizer.param_groups:
@@ -26,8 +49,6 @@ class INQScheduler(object):
                 n_1 = math.floor(math.log((4*s)/3, 2))
                 n_2 = int(n_1 + 1 - (2**(group['weight_bits']-1))/2)
                 group['ns'].append((n_1, n_2))
-
-        self.step()
 
     def state_dict(self):
         """Returns the state of the scheduler as a :class:`dict`.
@@ -45,7 +66,8 @@ class INQScheduler(object):
         self.__dict__.update(state_dict)
 
     def quantize(self):
-        # quantize the parameters
+        """Quantize the parameters handled by the optimizer.
+        """
         for group in self.optimizer.param_groups:
             for idx, p in enumerate(group['params']):
                 if p.requires_grad is False:
@@ -58,6 +80,8 @@ class INQScheduler(object):
                 p.data = torch.where(T == 0, fully_quantized, p.data)
 
     def quantize_weight(self, weight, n_1, n_2):
+        """Quantize a single weight using the INQ quantization scheme.
+        """
         alpha = 0
         beta = 2 ** n_2
         abs_weight = math.fabs(weight)
@@ -71,30 +95,53 @@ class INQScheduler(object):
         return quantized_weight
 
     def step(self):
-        # update T matrix
+        """Performs weight partitioning and quantization
+        """
         for group in self.optimizer.param_groups:
             for idx, p in enumerate(group['params']):
                 if p.requires_grad is False:
                     continue
+                if self.strategy == "random":
+                    if self.idx == 0:
+                        probability = self.iterative_steps[0]
+                    elif self.idx >= len(self.iterative_steps) - 1:
+                        probability = 1
+                    else:
+                        probability = (self.iterative_steps[self.idx] - self.iterative_steps[self.idx - 1]) / (1 - self.iterative_steps[self.idx - 1])
 
-                if self.idx == 0:
-                    probability = self.iterative_steps[0]
-                elif self.idx >= len(self.iterative_steps) - 1:
-                    probability = 1
+                    T = group['Ts'][idx]
+                    T_rand = torch.rand_like(p.data)
+                    zeros = torch.zeros_like(p.data)
+                    T = torch.where(T_rand <= probability, zeros, T)
+                    group['Ts'][idx] = T
                 else:
-                    probability = (self.iterative_steps[self.idx] - self.iterative_steps[self.idx - 1]) / (1 - self.iterative_steps[self.idx - 1])
-
-                T = group['Ts'][idx]
-                T_rand = torch.rand_like(p.data)
-                zeros = torch.zeros_like(p.data)
-                T = torch.where(T_rand <= probability, zeros, T)
-                group['Ts'][idx] = T
+                    zeros = torch.zeros_like(p.data)
+                    ones = torch.ones_like(p.data)
+                    quantile = np.quantile(torch.abs(p.data.cpu()).numpy(), 1 - self.iterative_steps[self.idx])
+                    T = torch.where(torch.abs(p.data) >= quantile, zeros, ones)
+                    group['Ts'][idx] = T
 
         self.idx += 1
         self.quantize()
 
 
 def reset_lr_scheduler(scheduler):
+    """Reset the learning rate scheduler.
+    INQ requires resetting the learning rate every iteration of the procedure.
+
+    Example:
+        >>> optimizer = inq.SGD(...)
+        >>> scheduler = torch.optim.lr_scheduler.StepLR(optimizer, ...)
+        >>> inq_scheduler = INQScheduler(optimizer, [0.5, 0.75, 0.82, 1.0], strategy="pruning")
+        >>> for inq_step in range(3):
+        >>>     reset_lr_scheduler(scheduler)
+        >>>     inq_scheduler.step()
+        >>>     for epoch in range(5):
+        >>>         scheduler.step()
+        >>>         train(...)
+        >>> inq_scheduler.step()
+        >>> validate(...)
+    """
     scheduler.base_lrs = list(map(lambda group: group['initial_lr'], scheduler.optimizer.param_groups))
     last_epoch = -1
     scheduler.step(last_epoch + 1)

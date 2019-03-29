@@ -3,7 +3,8 @@ from torch.optim.optimizer import Optimizer, required
 
 
 class SGD(Optimizer):
-    r"""Implements stochastic gradient descent (optionally with momentum).
+    r"""Implements stochastic gradient descent (optionally with momentum)
+    for incremental network quantization.
 
     Nesterov momentum is based on the formula from
     `On the importance of initialization and momentum in deep learning`__.
@@ -16,9 +17,12 @@ class SGD(Optimizer):
         weight_decay (float, optional): weight decay (L2 penalty) (default: 0)
         dampening (float, optional): dampening for momentum (default: 0)
         nesterov (bool, optional): enables Nesterov momentum (default: False)
+        weight_bits (int, optional): number of bits used in the quantization of the weights
 
     Example:
-        >>> optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+        >>> optimizer = inq.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_bits=3)
+        >>> inq_scheduler = inq.INQScheduler(optimizer, [0.5, 0.75, 1.0], strategy=pruning)
+        >>> inq_scheduler.step()
         >>> optimizer.zero_grad()
         >>> loss_fn(model(input), target).backward()
         >>> optimizer.step()
