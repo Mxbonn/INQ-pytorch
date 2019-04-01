@@ -55,4 +55,4 @@ Results using this code differ slightly from the results reported in the paper.
 |-------|--------|---------|--------------|--------------|
 |resnet18|ref    |32       |69.758%       |89.078%       |
 |resnet18|random |5        |69.064%       |88.766%       |
-|resnet18|pruning|5        |              |              |
+|resnet18|pruning|5        |69.654%       |89.170%       |
