@@ -142,6 +142,8 @@ def reset_lr_scheduler(scheduler):
         >>> inq_scheduler.step()
         >>> validate(...)
     """
+    for group in scheduler.optimizer.param_groups:
+        group['lr'] = group['initial_lr']
     scheduler.base_lrs = list(map(lambda group: group['initial_lr'], scheduler.optimizer.param_groups))
     last_epoch = -1
     scheduler.step(last_epoch + 1)

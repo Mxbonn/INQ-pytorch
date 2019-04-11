@@ -253,6 +253,7 @@ def main_worker(gpu, ngpus_per_node, args):
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
         }, False, filename='./models/quantized_{}_pruning.pth.tar'.format(args.arch))
+    validate(val_loader, model, criterion, args)
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
