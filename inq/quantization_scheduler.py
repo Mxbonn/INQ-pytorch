@@ -117,8 +117,8 @@ class INQScheduler(object):
                 else:
                     zeros = torch.zeros_like(p.data)
                     ones = torch.ones_like(p.data)
-                    quantile = np.quantile(torch.abs(p.data.cpu()).numpy(), self.iterative_steps[self.idx])
-                    T = torch.where(torch.abs(p.data) <= quantile, zeros, ones)
+                    quantile = np.quantile(torch.abs(p.data.cpu()).numpy(), 1 - self.iterative_steps[self.idx])
+                    T = torch.where(torch.abs(p.data) >= quantile, zeros, ones)
                     group['Ts'][idx] = T
 
         self.idx += 1
@@ -142,8 +142,6 @@ def reset_lr_scheduler(scheduler):
         >>> inq_scheduler.step()
         >>> validate(...)
     """
-    for group in scheduler.optimizer.param_groups:
-        group['lr'] = group['initial_lr']
     scheduler.base_lrs = list(map(lambda group: group['initial_lr'], scheduler.optimizer.param_groups))
     last_epoch = -1
     scheduler.step(last_epoch + 1)
