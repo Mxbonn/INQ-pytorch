@@ -41,6 +41,8 @@ class INQScheduler(object):
 
         for group in self.optimizer.param_groups:
             group['ns'] = []
+            if group['weight_bits'] is None:
+                continue
             for p in group['params']:
                 if p.requires_grad is False:
                     group['ns'].append((0, 0))
@@ -72,6 +74,8 @@ class INQScheduler(object):
             for idx, p in enumerate(group['params']):
                 if p.requires_grad is False:
                     continue
+                if group['weight_bits'] is None:
+                    continue
                 T = group['Ts'][idx]
                 ns = group['ns'][idx]
                 device = p.data.device
@@ -100,6 +104,8 @@ class INQScheduler(object):
         for group in self.optimizer.param_groups:
             for idx, p in enumerate(group['params']):
                 if p.requires_grad is False:
+                    continue
+                if group['weight_bits'] is None:
                     continue
                 if self.strategy == "random":
                     if self.idx == 0:
@@ -143,7 +149,7 @@ def reset_lr_scheduler(scheduler):
         >>> validate(...)
     """
     scheduler.base_lrs = list(map(lambda group: group['initial_lr'], scheduler.optimizer.param_groups))
-    last_epoch = -1
-    scheduler.step(last_epoch + 1)
+    last_epoch = 0
     scheduler.last_epoch = last_epoch
+    scheduler.step(last_epoch)
 

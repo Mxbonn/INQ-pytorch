@@ -175,11 +175,17 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
 
     if args.quantize:
-        optimizer = inq.SGD(model.parameters(), args.lr,
-                            momentum=args.momentum,
-                            weight_decay=args.weight_decay,
-                            weight_bits=args.weight_bits
-                            )
+        quantized_parameters = []
+        full_precision_parameters = []
+        for name, param in model.named_parameters():
+            if 'bn' in name or 'bias' in name:
+                full_precision_parameters.append(param)
+            else:
+                quantized_parameters.append(param)
+        optimizer = inq.SGD([
+            {'params': quantized_parameters},
+            {'params': full_precision_parameters, 'weight_bits': None}
+        ], args.lr, momentum=args.momentum, weight_decay=args.weight_decay, weight_bits=args.weight_bits)
 
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2])
 
@@ -222,23 +228,23 @@ def main_worker(gpu, ngpus_per_node, args):
         return
 
     if args.quantize:
-        quantization_epochs = len(args.iterative_steps) - 1
+        quantization_epochs = len(args.iterative_steps)
         quantization_scheduler = inq.INQScheduler(optimizer, args.iterative_steps, strategy="pruning")
     else:
         quantization_epochs = 1
 
     validate(val_loader, model, criterion, args)
-    if args.quantize:
-        quantization_scheduler.step()
     for campaign in range(quantization_epochs):
         inq.reset_lr_scheduler(scheduler)
         for epoch in range(args.start_epoch, args.epochs):
-            scheduler.step()
+            if args.quantize:
+                quantization_scheduler.step()
             if args.distributed:
                 train_sampler.set_epoch(epoch)
 
             # train for one epoch
             train(train_loader, model, criterion, optimizer, epoch, args)
+            scheduler.step()
 
             # evaluate on validation set
             acc1 = validate(val_loader, model, criterion, args)
@@ -246,8 +252,6 @@ def main_worker(gpu, ngpus_per_node, args):
             # remember best acc@1 and save checkpoint
             is_best = acc1 > best_acc1
             best_acc1 = max(acc1, best_acc1)
-        if args.quantize:
-            quantization_scheduler.step()
 
         save_checkpoint({
             'state_dict': model.state_dict(),

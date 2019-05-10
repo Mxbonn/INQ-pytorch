@@ -14,7 +14,7 @@ Official Caffe implementation is available [[here]](https://github.com/AojunZhou
 
 ----
 ### Installation
-The code is implemented in Python 3.7 and PyTorch 1.0
+The code is implemented in Python 3.7 and PyTorch 1.1
 ```
 pip install -e .
 ```
