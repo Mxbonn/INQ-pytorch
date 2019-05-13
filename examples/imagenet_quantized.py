@@ -4,7 +4,6 @@ import random
 import shutil
 import time
 import warnings
-import sys
 
 import inq
 import torch
@@ -20,7 +19,6 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 
-from tensorboardX import SummaryWriter
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -56,8 +54,6 @@ settings_dict = {
 
 best_acc1 = 0
 n_iter = 0
-
-writer = SummaryWriter(settings_dict['log_dir'])
 
 
 def main():
@@ -308,9 +304,6 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
                   'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
                    epoch, i, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
-            writer.add_scalar('Train/Loss', losses.val, n_iter)
-            writer.add_scalar('Train/Prec@1', top1.val, n_iter)
-            writer.add_scalar('Train/Prec@5', top5.val, n_iter)
             n_iter += args.print_freq
 
 
@@ -357,9 +350,6 @@ def validate(val_loader, model, criterion, args):
         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
               .format(top1=top1, top5=top5))
 
-    writer.add_scalar('Test/Loss', losses.avg, n_iter)
-    writer.add_scalar('Test/Prec@1', top1.avg, n_iter)
-    writer.add_scalar('Test/Prec@5', top5.avg, n_iter)
     return top1.avg
 
 

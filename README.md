@@ -48,3 +48,10 @@ validate(...)
 Using this example you can quantize a pretrained model on imagenet.
 Compare the file to the [original example](https://github.com/pytorch/examples/tree/master/imagenet) to see the differences.
 
+#### Results	
+Results using this code differ slightly from the results reported in the paper. 	
+
+ |Network|Strategy|Bit-width|Top-1 Accuracy|Top-5 Accuracy|	
+|-------|--------|---------|--------------|--------------|	
+|resnet18|ref    |32       |69.758%       |89.078%       |	
+|resnet18|pruning|5        |69.64%        |89.07%        |
