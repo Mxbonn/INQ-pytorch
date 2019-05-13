@@ -4,7 +4,6 @@ import random
 import shutil
 import time
 import warnings
-import sys
 
 import inq
 import torch
@@ -20,7 +19,6 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 
-from tensorboardX import SummaryWriter
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -56,8 +54,6 @@ settings_dict = {
 
 best_acc1 = 0
 n_iter = 0
-
-writer = SummaryWriter(settings_dict['log_dir'])
 
 
 def main():
@@ -175,11 +171,17 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
 
     if args.quantize:
-        optimizer = inq.SGD(model.parameters(), args.lr,
-                            momentum=args.momentum,
-                            weight_decay=args.weight_decay,
-                            weight_bits=args.weight_bits
-                            )
+        quantized_parameters = []
+        full_precision_parameters = []
+        for name, param in model.named_parameters():
+            if 'bn' in name or 'bias' in name:
+                full_precision_parameters.append(param)
+            else:
+                quantized_parameters.append(param)
+        optimizer = inq.SGD([
+            {'params': quantized_parameters},
+            {'params': full_precision_parameters, 'weight_bits': None}
+        ], args.lr, momentum=args.momentum, weight_decay=args.weight_decay, weight_bits=args.weight_bits)
 
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2])
 
@@ -222,23 +224,23 @@ def main_worker(gpu, ngpus_per_node, args):
         return
 
     if args.quantize:
-        quantization_epochs = len(args.iterative_steps) - 1
+        quantization_epochs = len(args.iterative_steps)
         quantization_scheduler = inq.INQScheduler(optimizer, args.iterative_steps, strategy="pruning")
     else:
         quantization_epochs = 1
 
     validate(val_loader, model, criterion, args)
-    if args.quantize:
-        quantization_scheduler.step()
     for campaign in range(quantization_epochs):
         inq.reset_lr_scheduler(scheduler)
         for epoch in range(args.start_epoch, args.epochs):
-            scheduler.step()
+            if args.quantize:
+                quantization_scheduler.step()
             if args.distributed:
                 train_sampler.set_epoch(epoch)
 
             # train for one epoch
             train(train_loader, model, criterion, optimizer, epoch, args)
+            scheduler.step()
 
             # evaluate on validation set
             acc1 = validate(val_loader, model, criterion, args)
@@ -246,8 +248,6 @@ def main_worker(gpu, ngpus_per_node, args):
             # remember best acc@1 and save checkpoint
             is_best = acc1 > best_acc1
             best_acc1 = max(acc1, best_acc1)
-        if args.quantize:
-            quantization_scheduler.step()
 
         save_checkpoint({
             'state_dict': model.state_dict(),
@@ -304,9 +304,6 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
                   'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
                    epoch, i, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
-            writer.add_scalar('Train/Loss', losses.val, n_iter)
-            writer.add_scalar('Train/Prec@1', top1.val, n_iter)
-            writer.add_scalar('Train/Prec@5', top5.val, n_iter)
             n_iter += args.print_freq
 
 
@@ -353,9 +350,6 @@ def validate(val_loader, model, criterion, args):
         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
               .format(top1=top1, top5=top5))
 
-    writer.add_scalar('Test/Loss', losses.avg, n_iter)
-    writer.add_scalar('Test/Prec@1', top1.avg, n_iter)
-    writer.add_scalar('Test/Prec@5', top5.avg, n_iter)
     return top1.avg
 
 
