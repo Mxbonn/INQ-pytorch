@@ -25,7 +25,7 @@ model_names = sorted(name for name in models.__dict__
     and callable(models.__dict__[name]))
 
 settings_dict = {
-    'data': '/home/mbonnaer/Datasets/imagenet',
+    'data': '/project_scratch/data/imagenet',
     'arch': 'resnet18',
     'workers': 8,
     'epochs': 4,
@@ -49,7 +49,7 @@ settings_dict = {
     'quantize': True,
     'weight_bits': 5,
     'iterative_steps': [0.5, 0.75, 0.875, 1],
-    'log_dir': "./tensorboard/resnet18_inq_pruning"
+    'log_dir': "/project/tensorboard/resnet18_inq_pruning"
 }
 
 best_acc1 = 0
@@ -232,9 +232,9 @@ def main_worker(gpu, ngpus_per_node, args):
     validate(val_loader, model, criterion, args)
     for campaign in range(quantization_epochs):
         inq.reset_lr_scheduler(scheduler)
+        if args.quantize:
+            quantization_scheduler.step()
         for epoch in range(args.start_epoch, args.epochs):
-            if args.quantize:
-                quantization_scheduler.step()
             if args.distributed:
                 train_sampler.set_epoch(epoch)
 
@@ -252,7 +252,7 @@ def main_worker(gpu, ngpus_per_node, args):
         save_checkpoint({
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
-        }, False, filename='./models/quantized_{}_pruning.pth.tar'.format(args.arch))
+        }, False, filename='/project/models/quantized_{}_pruning.pth.tar'.format(args.arch))
     validate(val_loader, model, criterion, args)
 
 

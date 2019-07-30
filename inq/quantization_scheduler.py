@@ -126,6 +126,7 @@ class INQScheduler(object):
                     quantile = np.quantile(torch.abs(p.data.cpu()).numpy(), 1 - self.iterative_steps[self.idx])
                     T = torch.where(torch.abs(p.data) >= quantile, zeros, ones)
                     group['Ts'][idx] = T
+                    print("Step: {}".format(self.iterative_steps[self.idx]))
 
         self.idx += 1
         self.quantize()
