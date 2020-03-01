@@ -4,6 +4,7 @@ import random
 import shutil
 import time
 import warnings
+import csv
 
 import inq
 import torch
@@ -25,7 +26,7 @@ model_names = sorted(name for name in models.__dict__
     and callable(models.__dict__[name]))
 
 settings_dict = {
-    'data': '/project_scratch/data/imagenet',
+    'data': '~/pytorch_datasets/imagenet',
     'arch': 'resnet18',
     'workers': 8,
     'epochs': 4,
@@ -49,7 +50,7 @@ settings_dict = {
     'quantize': True,
     'weight_bits': 5,
     'iterative_steps': [0.5, 0.75, 0.875, 1],
-    'log_dir': "/project/tensorboard/resnet18_inq_pruning"
+    'log_dir': "./models/resnet18_inq_pruning"
 }
 
 best_acc1 = 0
@@ -94,6 +95,8 @@ def main():
 def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
     args.gpu = gpu
+
+    os.makedirs(args.log_dir, exist_ok=True)
 
     if args.gpu is not None:
         print("Use GPU: {} for training".format(args.gpu))
@@ -230,6 +233,14 @@ def main_worker(gpu, ngpus_per_node, args):
         quantization_epochs = 1
 
     validate(val_loader, model, criterion, args)
+    train_log = []
+
+    with open(os.path.join(args.log_dir, "train_log.csv"), "w") as train_log_file:
+        train_log_csv = csv.writer(train_log_file)
+        train_log_csv.writerow(['epoch', 'train_loss', 'train_top1_acc', 'train_top5_acc', 'train_time', 'test_loss', 'test_top1_acc', 'test_top5_acc', 'test_time', 'cumulative_time'])
+
+    start_log_time = time.time()
+
     for campaign in range(quantization_epochs):
         inq.reset_lr_scheduler(scheduler)
         if args.quantize:
@@ -239,21 +250,26 @@ def main_worker(gpu, ngpus_per_node, args):
                 train_sampler.set_epoch(epoch)
 
             # train for one epoch
-            train(train_loader, model, criterion, optimizer, epoch, args)
+            train_epoch_log = train(train_loader, model, criterion, optimizer, epoch, args)
             scheduler.step()
 
             # evaluate on validation set
-            acc1 = validate(val_loader, model, criterion, args)
+            val_epoch_log = validate(val_loader, model, criterion, args)
+            acc1 = val_epoch_log[2]
+
+            # append to log
+            with open(os.path.join(args.log_dir, "train_log.csv"), "a") as train_log_file:
+                train_log_csv = csv.writer(train_log_file)
+                train_log_csv.writerow(((epoch,) + train_epoch_log + val_epoch_log + (time.time() - start_log_time,))) 
 
             # remember best acc@1 and save checkpoint
             is_best = acc1 > best_acc1
             best_acc1 = max(acc1, best_acc1)
 
-        save_checkpoint({
-            'state_dict': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-        }, False, filename='/project/models/quantized_{}_pruning.pth.tar'.format(args.arch))
-    validate(val_loader, model, criterion, args)
+            save_checkpoint({
+                'state_dict': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+            }, is_best, filename=os.path.join(args.log_dir, 'quantized_{}_pruning.pth.tar'.format(args.arch)))
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
@@ -306,6 +322,8 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
             n_iter += args.print_freq
 
+    return (losses.avg, top1.avg.cpu().numpy(), top5.avg.cpu().numpy(), batch_time.avg)
+
 
 def validate(val_loader, model, criterion, args):
     global n_iter
@@ -350,13 +368,14 @@ def validate(val_loader, model, criterion, args):
         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
               .format(top1=top1, top5=top5))
 
-    return top1.avg
+    return (losses.avg, top1.avg.cpu().numpy(), top5.avg.cpu().numpy(), batch_time.avg)
 
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'model_best.pth.tar')
+        shutil.copyfile(filename, os.path.join(os.path.dirname(filename),'model_best.pth.tar'))
 
 
 class AverageMeter(object):
