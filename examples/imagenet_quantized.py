@@ -5,6 +5,7 @@ import shutil
 import time
 import warnings
 import csv
+import argparse
 
 import inq
 import torch
@@ -25,40 +26,72 @@ model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
 
-settings_dict = {
-    'data': '~/pytorch_datasets/imagenet',
-    'arch': 'resnet18',
-    'workers': 8,
-    'epochs': 4,
-    'start_epoch': 0,
-    'batch_size': 256,
-    'lr': 0.001,
-    'momentum': 0.9,
-    'weight_decay': 0.0005,
-    'print_freq': 10,
-    'resume': '',
-    'evaluate': False,
-    'pretrained': True,
-    'world_size': -1,
-    'rank': -1,
-    'dist_url': '',
-    'dist_backend': '',
-    'seed': None,
-    'gpu': None,
-    'multiprocessing_distributed': False,
-
-    'quantize': True,
-    'weight_bits': 5,
-    'iterative_steps': [0.5, 0.75, 0.875, 1],
-    'log_dir': "./models/resnet18_inq_pruning"
-}
+parser = argparse.ArgumentParser(description='INQ PyTorch ImageNet Training')
+parser.add_argument('data', metavar='DIR',
+                    help='path to dataset')
+parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
+                    choices=model_names,
+                    help='model architecture: ' +
+                        ' | '.join(model_names) +
+                        ' (default: resnet18)')
+parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
+                    help='number of data loading workers (default: 8)')
+parser.add_argument('--epochs', default=4, type=int, metavar='N',
+                    help='number of epochs per iteration step')
+parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
+                    help='manual epoch number (useful on restarts)')
+parser.add_argument('-b', '--batch-size', default=256, type=int,
+                    metavar='N',
+                    help='mini-batch size (default: 256), this is the total '
+                         'batch size of all GPUs on the current node when '
+                         'using Data Parallel or Distributed Data Parallel')
+parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
+                    metavar='LR', help='initial learning rate', dest='lr')
+parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
+                    help='momentum')
+parser.add_argument('--wd', '--weight-decay', default=0.0005, type=float,
+                    metavar='W', help='weight decay (default: 0.0005)',
+                    dest='weight_decay')
+parser.add_argument('-p', '--print-freq', default=10, type=int,
+                    metavar='N', help='print frequency (default: 10)')
+parser.add_argument('--resume', default='', type=str, metavar='CHECKPOINT_PATH',
+                    help='path to latest checkpoint (default: none)')
+parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
+                    help='only evaluate model on validation set')
+parser.add_argument('--pretrained', dest='pretrained', default=True, type=lambda x:bool(distutils.util.strtobool(x)), 
+                    help='use pre-trained model')
+parser.add_argument('--world-size', default=-1, type=int,
+                    help='number of nodes for distributed training')
+parser.add_argument('--rank', default=-1, type=int,
+                    help='node rank for distributed training')
+parser.add_argument('--dist-url', default='', type=str,
+                    help='url used to set up distributed training')
+parser.add_argument('--dist-backend', default='', type=str,
+                    help='distributed backend')
+parser.add_argument('--seed', default=None, type=int,
+                    help='seed for initializing training. ')
+parser.add_argument('--gpu', default=None, type=int,
+                    help='GPU id to use.')
+parser.add_argument('--multiprocessing-distributed', action='store_true',
+                    help='Use multi-processing distributed training to launch '
+                         'N processes per node, which has N GPUs. This is the '
+                         'fastest way to use PyTorch for either single node or '
+                         'multi node data parallel training')
+parser.add_argument('--quantize', dest='quantize', default=True, type=lambda x:bool(distutils.util.strtobool(x)), 
+                    help='perform INQ quantization')
+parser.add_argument('-wb', '--weight-bits', type=int, default=5,
+                    help='number of bits to quantize the weights to') 
+parser.add_argument('--iterative-steps', type=float, nargs='+', default=[0.5, 0.75, 0.875, 1],
+                    help='a list of float numbers representing the portion of quanntized weights in each iterative step')
+parser.add_argument('--log_dir', type=str, default=None,
+                    help='directory to log the checkpoint and training log to')
 
 best_acc1 = 0
 n_iter = 0
 
 
 def main():
-    args = SimpleNamespace(**settings_dict)
+    args = parser.parse_args()
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -96,9 +129,15 @@ def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
     args.gpu = gpu
 
+    # create log_dir
     if args.log_dir is None:
         args.log_dir = os.path.join('.', 'models', args.arch + '_inq_pruning')
     os.makedirs(args.log_dir, exist_ok=True)
+
+    # save the command arguments
+    with open(os.path.join(args.log_dir, 'command_args.txt'), 'w') as command_args_file:
+        for arg, value in sorted(vars(args).items()):
+            command_args_file.write(arg + ": " + str(value) + "\n")
 
     if args.gpu is not None:
         print("Use GPU: {} for training".format(args.gpu))
