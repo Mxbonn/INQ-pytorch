@@ -96,6 +96,8 @@ def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
     args.gpu = gpu
 
+    if args.log_dir is None:
+        args.log_dir = os.path.join('.', 'models', args.arch + '_inq_pruning')
     os.makedirs(args.log_dir, exist_ok=True)
 
     if args.gpu is not None:
