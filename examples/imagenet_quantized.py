@@ -310,7 +310,7 @@ def main_worker(gpu, ngpus_per_node, args):
             save_checkpoint({
                 'state_dict': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
-            }, is_best, filename=os.path.join(args.log_dir, 'quantized_{}_pruning.pth.tar'.format(args.arch)))
+            }, False, filename=os.path.join(args.log_dir, 'quantized_{}_pruning.pth.tar'.format(args.arch)))
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
